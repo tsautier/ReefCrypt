@@ -15,6 +15,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\aead.cpp" />
     <ClCompile Include="src\blowfish.cpp" />
     <ClCompile Include="src\blowfish_cbc.cpp" />
     <ClCompile Include="src\blowini.cpp" />
@@ -23,6 +24,7 @@
     <ClCompile Include="src\util.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\aead.h" />
     <ClInclude Include="src\fish-internal.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

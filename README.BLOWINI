@@ -98,6 +98,27 @@ This file explains all settings and their implications in blow.ini.
 		NickTracker and /FiSH.usechankey create aliases. If the selected source is already an alias,
 		they use its direct source. Setting a key explicitly replaces the alias for that contact.
 
+	* Name: aead_key
+		Value: a securely generated 32-byte shared key encoded as exactly 64 hexadecimal characters
+		Default: (disabled)
+		Set this only in a network-specific section such as [EFNet:#fish10]. Every participant must
+		explicitly configure the same key for the conversation using FiSH AEAD-compatible software.
+		Share it through a separate secure channel and generate a fresh key for each conversation.
+		All holders of a shared key can read and create messages for that conversation. Use a new
+		key when the set of trusted participants changes or when a key may have been exposed.
+		FiSH looks up this setting directly. NickTracker, aliases, legacy sections and DH1080 do
+		not provision it. FiSH blocks outgoing messages for the configured contact if a nonempty key
+		is invalid. FiSH decrypts only authenticated AEAD messages for a configured contact.
+		Legacy ciphertext stays encrypted and incoming plaintext remains visible as plaintext.
+		AEAD v1 applies to regular PRIVMSG text. CTCP and CPRIVMSG to AEAD contacts are blocked.
+		NOTICE and TOPIC retain their existing settings.
+		Use a native IRC TCP or TLS connection with FiSH loaded. If a configured target cannot be
+		matched to its network or spelling, FiSH blocks the send. See docs/fish-aead-v1.md.
+		In mIRC, select Set AEAD key in the FiSH menu or enter /FiSH.setaeadkey <contact> to open
+		a masked prompt. Remove AEAD key or /FiSH.removeaeadkey <contact> removes only the AEAD key.
+		blow.ini stores the hexadecimal key in plaintext. Restrict file and backup access to your
+		account and anyone you explicitly trust to manage the key.
+
 	* Name: cbc
 		Value: 0 or 1
 		Default: 0

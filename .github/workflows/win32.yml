@@ -44,3 +44,7 @@ jobs:
               throw "Missing Release output $dll"
             }
           }
+
+      - name: Test FiSH authenticated encryption
+        shell: pwsh
+        run: ./tests/test-aead.ps1

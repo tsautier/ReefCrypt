@@ -18,6 +18,14 @@ on *:START: {
   .dll $qt($nofile($mircexe) $+ fish_inject.dll) _callMe
   .dll %FiSH_dll _callMe
   .dll %FiSH_dll FiSH_SetIniPath %blow_ini
+  .timerFiSHAeadError -o 0 2 FiSH.CheckAeadError
+}
+
+on *:UNLOAD:{ .timerFiSHAeadError off }
+
+alias FiSH.CheckAeadError {
+  var %message = $dll(%FiSH_dll,FiSH_GetAeadError10,unused)
+  if (%message != $null) echo $color(Mode text) -at %message
 }
 
 
@@ -157,6 +165,30 @@ alias FiSH.setkey { FiSH.WriteKey decode_utf8 $1 $2- }
 alias FiSH.setkey_utf8 { FiSH.WriteKey raw_bytes $1 $2- }
 
 
+alias FiSH.setaeadkey {
+  if (($0 != 1) || (!$network)) {
+    echo $color(Mode text) -at *** FiSH: Use /FiSH.setaeadkey target on the intended IRC network.
+    return
+  }
+  var %aead_key = $?*="Enter the 64 hexadecimal characters of the shared FiSH AEAD key"
+  if (%aead_key == $null) return
+  var %result = $dll(%FiSH_dll,FiSH_WriteAeadKey10,$network $1 %aead_key)
+  unset %aead_key
+  if (%result == ok) echo $color(Mode text) -at *** FiSH: AEAD key set for $1 on $network
+  else echo $color(Mode text) -at *** FiSH: Could not set the AEAD key. Check that it has 64 hexadecimal characters and blow.ini is writable.
+}
+
+
+alias FiSH.removeaeadkey {
+  if (($0 != 1) || (!$network)) {
+    echo $color(Mode text) -at *** FiSH: Use /FiSH.removeaeadkey target on the intended IRC network.
+    return
+  }
+  if ($dll(%FiSH_dll,FiSH_DelAeadKey10,$network $1) == ok) echo $color(Mode text) -at *** FiSH: AEAD key removed for $1 on $network
+  else echo $color(Mode text) -at *** FiSH: Could not remove the AEAD key for $1 on $network
+}
+
+
 alias FiSH.usechankey {
   if ($0 != 2) {
     echo $color(Mode text) -at *** FiSH: Usage: /FiSH.usechankey target source
@@ -236,6 +268,8 @@ menu channel {
   .Set new key :FiSH.setkey $chan $?
   .Set new key (UTF-8) :FiSH.setkey_utf8 $chan $?
   .Remove key :FiSH.removekey $chan
+  .Set AEAD key :FiSH.setaeadkey $chan
+  .Remove AEAD key :FiSH.removeaeadkey $chan
 }
 
 menu query {
@@ -247,6 +281,8 @@ menu query {
   .Set new key :FiSH.setkey $1 $?
   .Set new key (UTF-8) :FiSH.setkey_utf8 $1 $?
   .Remove key :FiSH.removekey $1
+  .Set AEAD key :FiSH.setaeadkey $1
+  .Remove AEAD key :FiSH.removeaeadkey $1
 }
 
 menu nicklist {
@@ -259,6 +295,8 @@ menu nicklist {
   .Set new key (UTF-8) :FiSH.setkey_utf8 $1 $?
   .Remove key :FiSH.removekey $1
   .Use same key as $chan :FiSH.usechankey $1 $chan
+  .Set AEAD key :FiSH.setaeadkey $1
+  .Remove AEAD key :FiSH.removeaeadkey $1
 }
 
 menu status,channel,nicklist,query {
