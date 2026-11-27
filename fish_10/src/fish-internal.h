@@ -12,11 +12,11 @@ protected:
 	std::string m_iniBlowKey;
 	bool m_noLegacy;
 
-	std::string GetBlowKey(const std::string& a_name, bool& ar_cbc) const;
+	std::string GetBlowKey(const std::string& a_name, bool& ar_cbc, bool& ar_keyUnreadable) const;
 	std::string FindBlowKey(const std::string& a_network, const std::string& a_contact,
-		bool& ar_cbc, std::string& ar_alias) const;
+		bool& ar_cbc, std::string& ar_alias, bool& ar_keyUnreadable) const;
 	std::string ResolveBlowKey(const std::string& a_network, const std::string& a_contact,
-		bool& ar_cbc, std::string& ar_alias) const;
+		bool& ar_cbc, std::string& ar_alias, bool& ar_keyUnreadable) const;
 	bool DeleteBlowKey(const std::string& a_name) const;
 	bool WriteBlowKey(const std::string& a_name, const std::string& a_value) const;
 	bool GetSectionBool(const std::string& a_name, const wchar_t* a_key, bool a_default) const;
@@ -43,7 +43,9 @@ public:
 	enum class AliasWriteResult { Ok, NoKey, Error };
 	AliasWriteResult WriteBlowAlias(const std::string& a_network, const std::string& a_target,
 		const std::string& a_source, bool a_trackNick) const;
-	std::string GetBlowKey(const std::string& a_network, const std::string& a_contact, bool& ar_cbc) const;
+	// An unreadable stored key must not be treated as an unkeyed contact.
+	std::string GetBlowKey(const std::string& a_network, const std::string& a_contact,
+		bool& ar_cbc, bool* ar_keyUnreadable = nullptr) const;
 	bool DeleteBlowKey(const std::string& a_network, const std::string& a_contact) const;
 	bool WriteBlowKey(const std::string& a_network, const std::string& a_contact, const std::string& a_value) const;
 	bool GetSectionBool(const std::string& a_network, const std::string& a_contact, const wchar_t* a_key, bool a_default) const;
@@ -66,7 +68,7 @@ std::string SimpleMIRCParser(const std::string& a_str);
 bool Utf8Validate(const char* a_str);
 
 /* from blowfish.cpp */
-void blowfish_encrypt(const std::string& ain, std::string &out, const std::string &key);
+bool blowfish_encrypt(const std::string& a_in, std::string& ar_out, const std::string& a_key);
 int blowfish_decrypt(const std::string& ain, std::string &out, const std::string &key);
 
 /* from dh1080.cpp */
