@@ -142,9 +142,10 @@ I would like to thank RXD for the work he has put into the FiSH addon over the l
 few years. However, he has been slow with updates and unwilling to open source a
 simple mIRC addon like this, so someone had to take over!
 
-FiSH 10 utilizes "MinHook" by TsudaKageyu, thanks. It contains some code from
-http://dirtirc.sourceforge.net/ (blowfish core) and some utility methods from
-http://code.google.com/p/infekt/ (which is an excellent NFO viewer by the way).
+FiSH 10 uses [MinHook](https://github.com/TsudaKageyu/minhook) by TsudaKageyu and
+utility methods from [iNFekt](http://code.google.com/p/infekt/). Earlier releases
+used code from [DirtIRC](https://dirtirc.sourceforge.net/) for Blowfish ECB.
+The current Blowfish ECB implementation uses OpenSSL and preserves the FiSH wire format.
 The rest of the code is what I contributed myself and is licensed under the
 "Go fuck yourself, it's free!" license.
 

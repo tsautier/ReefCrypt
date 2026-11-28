@@ -427,6 +427,14 @@ char* _OnIncomingIRCLine(HANDLE a_socket, const char* a_line, size_t a_len)
 }
 
 
+static char* SuppressFailedEncryption()
+{
+	::OutputDebugStringA("FiSH: outgoing IRC line suppressed after an encryption or key read failure.\n");
+	// An empty replacement tells the injector to drop the line.
+	return new char[1]{};
+}
+
+
 /* called from fish_inject.dll */
 char* _OnOutgoingIRCLine(HANDLE a_socket, const char* a_line, size_t a_len)
 {
@@ -576,10 +584,11 @@ char* _OnOutgoingIRCLine(HANDLE a_socket, const char* a_line, size_t a_len)
 
 	// get blowfish key...
 	bool l_cbc;
-	std::string l_blowKey = l_ini->GetBlowKey(l_networkName, l_target, l_cbc);
+	bool l_keyUnreadable;
+	std::string l_blowKey = l_ini->GetBlowKey(l_networkName, l_target, l_cbc, &l_keyUnreadable);
 
 	if(l_blowKey.empty())
-		return nullptr;
+		return l_keyUnreadable ? SuppressFailedEncryption() : nullptr;
 	const size_t l_maxLength = l_ini->MaxKeyLength(l_cbc);
 	if(l_blowKey.size() > l_maxLength)
 		l_blowKey.resize(l_maxLength);
@@ -596,6 +605,8 @@ char* _OnOutgoingIRCLine(HANDLE a_socket, const char* a_line, size_t a_len)
 	else
 	{
 		blowfish_encrypt_auto(l_cbc, l_message, l_newMsg, l_blowKey);
+		if(l_newMsg.empty())
+			return SuppressFailedEncryption();
 
 		l_newMsg =
 			l_tag +
