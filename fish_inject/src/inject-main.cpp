@@ -312,6 +312,9 @@ int __cdecl my_SSL_write(void* ssl, const void* buf, int num)
 
 			l_sock->Unlock();
 
+			// An engine can consume a line without sending a replacement.
+			if (l_buf.empty())
+				return num;
 			int l_ret = s_lpfn_SSL_write(ssl, l_buf.c_str(), l_buf.size());
 
 			return (l_ret > 0 ? num : l_ret);

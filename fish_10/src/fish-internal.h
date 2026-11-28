@@ -46,6 +46,9 @@ public:
 	std::string GetBlowKey(const std::string& a_network, const std::string& a_contact, bool& ar_cbc) const;
 	bool DeleteBlowKey(const std::string& a_network, const std::string& a_contact) const;
 	bool WriteBlowKey(const std::string& a_network, const std::string& a_contact, const std::string& a_value) const;
+	std::string GetAeadKey(const std::string& a_network, const std::string& a_contact) const;
+	bool HasAeadKeyForTarget(const std::string& a_contact) const;
+	bool SetAeadKey(const std::string& a_network, const std::string& a_contact, const std::string& a_hex) const;
 	bool GetSectionBool(const std::string& a_network, const std::string& a_contact, const wchar_t* a_key, bool a_default) const;
 	bool SetSectionBool(const std::string& a_network, const std::string& a_contact, const wchar_t* a_key, bool a_value) const;
 };

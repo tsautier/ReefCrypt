@@ -1,6 +1,8 @@
 #include "fish-internal.h"
 #include "fish-inject-engine.h"
 #include "mircdll.h"
+#include "aead.h"
+#include <atomic>
 #include <thread>
 
 static CRITICAL_SECTION s_iniLock;
@@ -24,6 +26,60 @@ static std::shared_ptr<CBlowIni> GetBlowIni()
 std::map<HANDLE, std::string> s_socketMap;
 static CRITICAL_SECTION s_socketMapLock;
 static DWORD s_maxMircReturnBytes = MIRC_PARAM_DATA_LENGTH_LOW;
+static std::atomic<const char*> s_aeadError{nullptr};
+static std::atomic<bool> s_engineRegistered{false};
+
+
+static std::string SocketNetwork(HANDLE a_socket)
+{
+	::EnterCriticalSection(&s_socketMapLock);
+	const auto l_network = s_socketMap.find(a_socket);
+	const std::string l_name = l_network != s_socketMap.end() ? l_network->second : std::string();
+	::LeaveCriticalSection(&s_socketMapLock);
+	return l_name;
+}
+
+
+static std::string AeadNetworkName(const std::string& a_network)
+{
+	// mIRC filters the NETWORK token before exposing it to scripts as $network.
+	std::string l_name;
+	for(char l_char : a_network)
+	{
+		if((l_char >= 'A' && l_char <= 'Z') || (l_char >= 'a' && l_char <= 'z')
+			|| (l_char >= '0' && l_char <= '9') || l_char == '_' || l_char == '.' || l_char == '-')
+			l_name += l_char;
+	}
+	return l_name;
+}
+
+
+static std::string_view WithoutIrcTerminator(std::string_view a_line)
+{
+	if(a_line.ends_with('\n'))
+		a_line.remove_suffix(1);
+	if(a_line.ends_with('\r'))
+		a_line.remove_suffix(1);
+	return a_line;
+}
+
+
+static char* CopyIrcLine(std::string_view a_line)
+{
+	char* l_result = new char[a_line.size() + 1];
+	if(!a_line.empty())
+		memcpy(l_result, a_line.data(), a_line.size());
+	l_result[a_line.size()] = '\0';
+	return l_result;
+}
+
+
+static char* DropAeadMessage(const char* a_reason)
+{
+	s_aeadError.store(a_reason);
+	// A non-null, empty replacement consumes the original outgoing IRC line.
+	return CopyIrcLine({});
+}
 
 
 /* called from fish_inject.dll */
@@ -79,7 +135,8 @@ char* _OnIncomingIRCLine(HANDLE a_socket, const char* a_line, size_t a_len)
 	}
 
 	// quick exit to save some CPU cycles:
-	if(!strstr(a_line, "+OK ") && !strstr(a_line, "mcps "))
+	if(!strstr(a_line, "+OK ") && !strstr(a_line, "mcps ")
+		&& !strstr(a_line, fish_aead::Marker.data()))
 		return nullptr;
 
 	const auto l_ini = GetBlowIni();
@@ -121,7 +178,7 @@ char* _OnIncomingIRCLine(HANDLE a_socket, const char* a_line, size_t a_len)
 		l_line = std::string(a_line, a_len);
 	}
 
-	std::string l_cmd, l_contact, l_message;
+	std::string l_cmd, l_contact, l_message, l_ircTarget;
 	std::string::size_type l_cmdPos, l_tmpPos, l_msgPos;
 
 	StrTrimRight(l_line);
@@ -151,7 +208,8 @@ char* _OnIncomingIRCLine(HANDLE a_socket, const char* a_line, size_t a_len)
 		return nullptr;
 
 	// check if +OK is in the message part of the line:
-	if(l_message.find("+OK ") == std::string::npos && l_message.find("mcps ") == std::string::npos)
+	if(l_message.find("+OK ") == std::string::npos && l_message.find("mcps ") == std::string::npos
+		&& !l_message.starts_with(fish_aead::Marker))
 		return nullptr;
 
 	enum {
@@ -211,7 +269,8 @@ char* _OnIncomingIRCLine(HANDLE a_socket, const char* a_line, size_t a_len)
 	{
 		bool l_psyLogHack = false;
 
-		l_contact = l_line.substr(l_tmpPos + 1, l_msgPos - 2 - l_tmpPos - 1);
+		l_ircTarget = l_line.substr(l_tmpPos + 1, l_msgPos - 2 - l_tmpPos - 1);
+		l_contact = l_ircTarget;
 
 		if(l_cmd_type == CMD_PRIVMSG && l_line.compare(0, 16, ":-psyBNC!psyBNC@") == 0)
 		{
@@ -297,6 +356,31 @@ char* _OnIncomingIRCLine(HANDLE a_socket, const char* a_line, size_t a_len)
 	if(l_contact.empty())
 		return nullptr;
 
+	const std::string l_networkName = SocketNetwork(a_socket);
+	if(l_cmd_type == CMD_PRIVMSG)
+	{
+		const std::string l_network = AeadNetworkName(l_networkName);
+		const bool l_explicitChannel = l_ircTarget.starts_with('#') || l_ircTarget.starts_with('&');
+		std::string l_aeadKey = l_explicitChannel ? l_ini->GetAeadKey(l_network, l_ircTarget) : std::string();
+		if(l_aeadKey.empty())
+			l_aeadKey = l_ini->GetAeadKey(l_network, l_contact);
+		if(l_message.starts_with(fish_aead::Marker))
+		{
+			const size_t l_payload = l_tag.size() + l_msgPos;
+			const auto l_frame = WithoutIrcTerminator(std::string_view(a_line + l_payload, a_len - l_payload));
+			fish_aead::Key l_key{};
+			std::string l_plaintext;
+			if(!l_leading.empty() || l_line.size() + 2 > 512
+				|| !fish_aead::ParseKey(l_aeadKey, l_key) || !fish_aead::Open(l_key, l_frame, l_plaintext)
+				|| l_plaintext.front() == 0x01)
+				return nullptr;
+			return CopyIrcLine(l_tag + l_line.substr(0, l_msgPos) + l_plaintext + "\n");
+		}
+		if(!l_aeadKey.empty() || l_ini->HasAeadKeyForTarget(l_contact)
+			|| (l_explicitChannel && l_ircTarget != l_contact && l_ini->HasAeadKeyForTarget(l_ircTarget)))
+			return nullptr; // Keep legacy ciphertext opaque in an AEAD conversation.
+	}
+
 	if(l_cmd_type == CMD_PRIVMSG && l_message.find("\x01""ACTION ") == 0)
 	{
 		l_message.erase(0, 8);
@@ -320,10 +404,6 @@ char* _OnIncomingIRCLine(HANDLE a_socket, const char* a_line, size_t a_len)
 
 	// get blowfish key...
 	bool l_cbc;
-
-	::EnterCriticalSection(&s_socketMapLock);
-	const std::string l_networkName = s_socketMap[a_socket];
-	::LeaveCriticalSection(&s_socketMapLock);
 
 	std::string l_blowKey = l_ini->GetBlowKey(l_networkName, l_contact, l_cbc);
 
@@ -427,6 +507,92 @@ char* _OnIncomingIRCLine(HANDLE a_socket, const char* a_line, size_t a_len)
 }
 
 
+static std::string_view AeadTarget(std::string_view a_target)
+{
+	const auto l_prefixEnd = a_target.find_first_not_of("~@%+");
+	if(l_prefixEnd == std::string_view::npos)
+		return a_target;
+	a_target.remove_prefix(l_prefixEnd);
+	if(a_target.starts_with("&#") || a_target.starts_with("&&"))
+		a_target.remove_prefix(1);
+	if(!a_target.starts_with('#') && !a_target.starts_with('&'))
+		a_target = a_target.substr(0, a_target.find_first_of("!@%"));
+	return a_target;
+}
+
+
+static char* OnOutgoingAead(HANDLE a_socket, std::string_view a_line, const CBlowIni& a_ini)
+{
+	const auto l_line = WithoutIrcTerminator(a_line);
+	size_t l_cmdStart = 0;
+	if(l_line.starts_with('@'))
+		l_cmdStart = l_line.find_first_not_of(' ', l_line.find(' '));
+	if(l_cmdStart == std::string_view::npos)
+		return nullptr;
+	const size_t l_cmdEnd = l_line.find(' ', l_cmdStart);
+	if(l_cmdEnd == std::string_view::npos)
+		return nullptr;
+	const auto l_cmd = l_line.substr(l_cmdStart, l_cmdEnd - l_cmdStart);
+	const bool l_privmsg = l_cmd.size() == 7 && !_strnicmp(l_cmd.data(), "PRIVMSG", 7);
+	if(!l_privmsg && !(l_cmd.size() == 8 && !_strnicmp(l_cmd.data(), "CPRIVMSG", 8)))
+		return nullptr;
+	const size_t l_targetStart = l_line.find_first_not_of(' ', l_cmdEnd);
+	if(l_targetStart == std::string_view::npos)
+		return nullptr;
+	const size_t l_targetEnd = l_line.find(' ', l_targetStart);
+	const auto l_targets = l_line.substr(l_targetStart, l_targetEnd - l_targetStart);
+
+	const std::string l_network = AeadNetworkName(SocketNetwork(a_socket));
+	std::string l_keyHex;
+	size_t l_start = 0;
+	// Normally the socket layer has already split multi-target PRIVMSG lines.
+	// If it could not split this variant, suppress the entire list if any target uses AEAD.
+	for(size_t l_comma; l_start <= l_targets.size(); l_start = l_comma + 1)
+	{
+		l_comma = l_targets.find(',', l_start);
+		const auto l_target = l_targets.substr(l_start, l_comma - l_start);
+		const auto l_contact = AeadTarget(l_target);
+		l_keyHex = a_ini.GetAeadKey(l_network, std::string(l_target));
+		if(l_keyHex.empty() && l_contact != l_target)
+			l_keyHex = a_ini.GetAeadKey(l_network, std::string(l_contact));
+		if(!l_keyHex.empty())
+			break;
+		// NETWORK is supplied by the server. A mismatched or missing token must
+		// not make a known protected target silently switch to a weaker mode.
+		if(a_ini.HasAeadKeyForTarget(std::string(l_target))
+			|| (l_contact != l_target && a_ini.HasAeadKeyForTarget(std::string(l_contact))))
+			return DropAeadMessage("FiSH AEAD: message blocked because the network or target spelling does not match the key.");
+		if(l_comma == std::string_view::npos)
+			break;
+	}
+	if(l_keyHex.empty())
+		return nullptr;
+
+	if(!a_ini.GetBool(L"process_outgoing", true))
+		return DropAeadMessage("FiSH AEAD: message blocked because outgoing encryption is disabled.");
+	const size_t l_bodyStart = l_line.find_first_not_of(' ', l_targetEnd);
+	if(!l_privmsg || l_targets.find(',') != std::string_view::npos || l_bodyStart == std::string_view::npos)
+		return DropAeadMessage("FiSH AEAD: unsupported IRC message format.");
+	const bool l_hasColon = l_line[l_bodyStart] == ':';
+	const auto l_plaintext = l_line.substr(l_bodyStart + l_hasColon);
+	if(l_plaintext.empty() || l_plaintext.front() == 0x01
+		|| (!l_hasColon && l_plaintext.find(' ') != std::string_view::npos))
+		return DropAeadMessage("FiSH AEAD: unsupported IRC message format.");
+
+	fish_aead::Key l_key{};
+	std::string l_frame;
+	if(!fish_aead::ParseKey(l_keyHex, l_key) || !fish_aead::Seal(l_key, l_plaintext, l_frame))
+		return DropAeadMessage("FiSH AEAD: message could not be encrypted.");
+
+	// Reserve space for the server's :nick!user@host prefix on a relayed line.
+	// Message tags have their own IRCv3 budget outside this length.
+	constexpr size_t RelayPrefixAllowance = 128;
+	if(l_bodyStart - l_cmdStart + 1 + l_frame.size() + 2 + RelayPrefixAllowance > 512)
+		return DropAeadMessage("FiSH AEAD: message is too long for an IRC line.");
+	return CopyIrcLine(std::string(l_line.substr(0, l_bodyStart)) + ":" + l_frame + "\r\n");
+}
+
+
 /* called from fish_inject.dll */
 char* _OnOutgoingIRCLine(HANDLE a_socket, const char* a_line, size_t a_len)
 {
@@ -434,6 +600,9 @@ char* _OnOutgoingIRCLine(HANDLE a_socket, const char* a_line, size_t a_len)
 		return nullptr;
 
 	const auto l_ini = GetBlowIni();
+
+	if(char* l_aead = OnOutgoingAead(a_socket, std::string_view(a_line, a_len), *l_ini))
+		return l_aead;
 
 	if(!l_ini->GetBool(L"process_outgoing", true))
 		return nullptr;
@@ -542,9 +711,7 @@ char* _OnOutgoingIRCLine(HANDLE a_socket, const char* a_line, size_t a_len)
 
 	std::string l_message = l_line.substr(l_msgPos + 2);
 
-	::EnterCriticalSection(&s_socketMapLock);
-	const std::string& l_networkName = s_socketMap[a_socket];
-	::LeaveCriticalSection(&s_socketMapLock);
+	const std::string l_networkName = SocketNetwork(a_socket);
 
 	// kill trailing whitespace, we'll add back the new line later:
 	StrTrimRight(l_message);
@@ -698,6 +865,39 @@ static bool DecodeKeyToAnsi(std::string& a_key)
 		return false;
 	a_key = l_ansi;
 	return true;
+}
+
+
+MIRC_DLL_EXPORT(FiSH_WriteAeadKey10)
+{
+	if(!data || !*data)
+		return MIRC_RET_HALT;
+	const auto l_args = SplitString(data, " ");
+	const bool l_success = s_engineRegistered.load() && l_args.size() == 3
+		&& GetBlowIni()->SetAeadKey(AeadNetworkName(l_args[0]), l_args[1], l_args[2]);
+	strcpy_s(data, s_maxMircReturnBytes, l_success ? "ok" : "error");
+	return MIRC_RET_DATA_RETURN;
+}
+
+
+MIRC_DLL_EXPORT(FiSH_DelAeadKey10)
+{
+	if(!data || !*data)
+		return MIRC_RET_HALT;
+	const auto l_args = SplitString(data, " ");
+	const bool l_success = l_args.size() == 2 && GetBlowIni()->SetAeadKey(AeadNetworkName(l_args[0]), l_args[1], {});
+	strcpy_s(data, s_maxMircReturnBytes, l_success ? "ok" : "error");
+	return MIRC_RET_DATA_RETURN;
+}
+
+
+MIRC_DLL_EXPORT(FiSH_GetAeadError10)
+{
+	const char* l_error = s_aeadError.exchange(nullptr);
+	if(!data)
+		return MIRC_RET_HALT;
+	strcpy_s(data, s_maxMircReturnBytes, l_error ? l_error : "");
+	return MIRC_RET_DATA_RETURN;
 }
 
 
@@ -1153,7 +1353,9 @@ MIRC_EXPORT_SIG(void) LoadDll(LOADINFO* info)
 
 	reg = std::make_shared<CFishEngineRegistration>(&g_engine_export);
 	
-	if (!reg->RegisterUsingDll())
+	const bool l_registered = reg->RegisterUsingDll();
+	s_engineRegistered.store(l_registered);
+	if (!l_registered)
 	{
 		::MessageBoxW(info->mHwnd, L"ReefCrypt could not register fish_10.dll with fish_inject.dll.", L"This is likely a bug", MB_ICONERROR | MB_OK);
 
@@ -1173,6 +1375,7 @@ MIRC_EXPORT_SIG(int) UnloadDll(int mTimeout)
 	else
 	{
 		// forced unload.
+		s_engineRegistered.store(false);
 		reg.reset();
 
 		return 0;

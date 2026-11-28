@@ -15,6 +15,9 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="src\aead.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="src\dh1080.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -35,6 +38,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\aead.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="src\fish-internal.h">
       <Filter>Header Files</Filter>
     </ClInclude>

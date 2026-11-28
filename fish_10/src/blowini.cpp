@@ -1,13 +1,43 @@
 #include "fish-internal.h"
+#include <cwchar>
 #include <time.h>
 
 #define INI_SECTION L"FiSH"
 
 static constexpr wchar_t ALIAS_ITEM[] = L"Alias";
+static constexpr wchar_t AEAD_KEY_ITEM[] = L"aead_key";
 
 static bool IsAliasContact(const std::string& a_contact)
 {
 	return !a_contact.empty() && a_contact.find_first_of(": \t\r\n") == std::string::npos;
+}
+
+
+static bool IsAeadName(const std::string& a_name)
+{
+	if(a_name.empty())
+		return false;
+	for(unsigned char l_char : a_name)
+	{
+		if(l_char <= ' ' || l_char == ':' || l_char == 127)
+			return false;
+	}
+	return true;
+}
+
+
+static std::wstring FoldAeadTarget(std::wstring a_target)
+{
+	// For fail-closed detection, cover the legacy INI aliases as well as
+	// RFC 1459 equivalences. A match here never selects a key for encryption.
+	for(wchar_t& l_char : a_target)
+	{
+		if(l_char == L'[' || l_char == L']' || l_char == L'{' || l_char == L'}' || l_char == L'^')
+			l_char = L'~';
+		else if(l_char == L'\\')
+			l_char = L'|';
+	}
+	return a_target;
 }
 
 
@@ -284,7 +314,19 @@ bool CBlowIni::DeleteBlowKey(const std::string& a_name) const
 
 bool CBlowIni::DeleteBlowKey(const std::string& a_network, const std::string& a_contact) const
 {
-	bool l_result = DeleteBlowKey(a_network + ":" + a_contact);
+	const std::string l_section = a_network + ":" + a_contact;
+	bool l_result;
+	if(GetSectionValue(l_section, AEAD_KEY_ITEM).empty())
+	{
+		l_result = DeleteBlowKey(l_section);
+	}
+	else
+	{
+		// Legacy removal must preserve the independently provisioned AEAD key.
+		l_result = true;
+		for(const wchar_t* l_item : {L"key", L"cbc", L"date", ALIAS_ITEM})
+			l_result = SetSectionValue(l_section, l_item, nullptr) && l_result;
+	}
 
 	if(!m_noLegacy)
 	{
@@ -292,6 +334,73 @@ bool CBlowIni::DeleteBlowKey(const std::string& a_network, const std::string& a_
 	}
 
 	return l_result;
+}
+
+
+std::string CBlowIni::GetAeadKey(const std::string& a_network, const std::string& a_contact) const
+{
+	if(!IsAeadName(a_network) || !IsAeadName(a_contact))
+		return {};
+	// Leave invalid nonempty material to the caller so an explicit opt-in fails closed.
+	return UnicodeToCp(CP_UTF8, GetSectionValue(a_network + ":" + a_contact, AEAD_KEY_ITEM));
+}
+
+
+bool CBlowIni::HasAeadKeyForTarget(const std::string& a_contact) const
+{
+	if(!IsAeadName(a_contact))
+		return false;
+	const std::wstring l_target = FoldAeadTarget(UnicodeFromCp(m_noLegacy ? CP_UTF8 : CP_ACP, a_contact));
+	constexpr DWORD l_maxSize = 1024 * 1024;
+	std::vector<wchar_t> l_names(4096);
+	for(;;)
+	{
+		const DWORD l_size = static_cast<DWORD>(l_names.size());
+		const DWORD l_length = ::GetPrivateProfileSectionNamesW(l_names.data(), l_size, m_iniPath.c_str());
+		if(l_length == 0 && !m_iniPath.empty())
+		{
+			// A temporarily unreadable profile is not evidence that a target is unprotected.
+			const HANDLE l_file = ::CreateFileW(m_iniPath.c_str(), GENERIC_READ,
+				FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+				FILE_ATTRIBUTE_NORMAL, nullptr);
+			if(l_file == INVALID_HANDLE_VALUE)
+				return true;
+			::CloseHandle(l_file);
+		}
+		if(l_length < l_size - 2)
+			break;
+		if(l_size == l_maxSize)
+			return true; // Incomplete enumeration cannot rule out an AEAD contact.
+		l_names.resize(l_size * 2);
+	}
+
+	for(const wchar_t* l_section = l_names.data(); *l_section; l_section += std::wcslen(l_section) + 1)
+	{
+		const wchar_t* l_separator = std::wcschr(l_section, L':');
+		if(!l_separator || l_separator == l_section)
+			continue;
+		const auto l_contact = FoldAeadTarget(l_separator + 1);
+		if(::CompareStringW(LOCALE_INVARIANT, NORM_IGNORECASE, l_contact.c_str(), -1,
+			l_target.c_str(), -1) != CSTR_EQUAL)
+			continue;
+		wchar_t l_value[2] = {};
+		if(::GetPrivateProfileStringW(l_section, AEAD_KEY_ITEM, L"", l_value, _countof(l_value), m_iniPath.c_str()))
+			return true;
+	}
+	return false;
+}
+
+
+bool CBlowIni::SetAeadKey(const std::string& a_network, const std::string& a_contact,
+	const std::string& a_hex) const
+{
+	if(!IsAeadName(a_network) || !IsAeadName(a_contact))
+		return false;
+	if(!a_hex.empty() && (a_hex.size() != 64 || a_hex.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos))
+		return false;
+
+	const std::wstring l_hex(a_hex.begin(), a_hex.end());
+	return SetSectionValue(a_network + ":" + a_contact, AEAD_KEY_ITEM, a_hex.empty() ? nullptr : l_hex.c_str());
 }
 
 

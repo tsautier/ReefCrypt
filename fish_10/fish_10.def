@@ -20,3 +20,6 @@ EXPORTS
 	NetworkDebugInfo
 	FiSH_GetVersion
 	FiSH_WriteAlias10
+	FiSH_WriteAeadKey10
+	FiSH_DelAeadKey10
+	FiSH_GetAeadError10
