@@ -100,7 +100,7 @@ std::string CBlowIni::FixContactName(const std::string& a_name)
 }
 
 
-std::string CBlowIni::GetBlowKey(const std::string& a_name, bool& ar_cbc) const
+std::string CBlowIni::GetBlowKey(const std::string& a_name, bool& ar_cbc, bool& ar_keyUnreadable) const
 {
 	const std::string l_iniSection = FixContactName(a_name);
 	std::string l_blowKey;
@@ -141,11 +141,10 @@ std::string CBlowIni::GetBlowKey(const std::string& a_name, bool& ar_cbc) const
 	const bool l_obfuscated = l_blowKey.find("+OK ") == 0;
 	if(l_obfuscated)
 	{
-		// the blowfish_decrypt must not change in a way that makes it stop
-		// making a copy of the first argument or this will blow up.
-		if(blowfish_decrypt(l_blowKey.substr(4), l_blowKey, m_iniBlowKey) != 0)
+		if(blowfish_decrypt(l_blowKey.substr(4), l_blowKey, m_iniBlowKey) != 0 || l_blowKey.empty())
 		{
-			l_blowKey = "";
+			l_blowKey.clear();
+			ar_keyUnreadable = true;
 		}
 	}
 
@@ -159,7 +158,7 @@ std::string CBlowIni::GetBlowKey(const std::string& a_name, bool& ar_cbc) const
 
 
 std::string CBlowIni::FindBlowKey(const std::string& a_network, const std::string& a_contact,
-	bool& ar_cbc, std::string& ar_alias) const
+	bool& ar_cbc, std::string& ar_alias, bool& ar_keyUnreadable) const
 {
 	const UINT l_codePage = m_noLegacy ? CP_UTF8 : CP_ACP;
 	const std::string l_networkSection = a_network + ":" + a_contact;
@@ -168,7 +167,7 @@ std::string CBlowIni::FindBlowKey(const std::string& a_network, const std::strin
 	if(!ar_alias.empty())
 		return {};
 
-	std::string l_result = GetBlowKey(l_networkSection, ar_cbc);
+	std::string l_result = GetBlowKey(l_networkSection, ar_cbc, ar_keyUnreadable);
 	if(!m_noLegacy && l_result.empty())
 	{
 		ar_alias = UnicodeToCp(l_codePage, GetSectionValue(a_contact, ALIAS_ITEM));
@@ -177,7 +176,7 @@ std::string CBlowIni::FindBlowKey(const std::string& a_network, const std::strin
 			ar_cbc = false;
 			return {};
 		}
-		l_result = GetBlowKey(a_contact, ar_cbc);
+		l_result = GetBlowKey(a_contact, ar_cbc, ar_keyUnreadable);
 	}
 
 	return l_result;
@@ -185,9 +184,9 @@ std::string CBlowIni::FindBlowKey(const std::string& a_network, const std::strin
 
 
 std::string CBlowIni::ResolveBlowKey(const std::string& a_network, const std::string& a_contact,
-	bool& ar_cbc, std::string& ar_alias) const
+	bool& ar_cbc, std::string& ar_alias, bool& ar_keyUnreadable) const
 {
-	std::string l_key = FindBlowKey(a_network, a_contact, ar_cbc, ar_alias);
+	std::string l_key = FindBlowKey(a_network, a_contact, ar_cbc, ar_alias, ar_keyUnreadable);
 	if(ar_alias.empty())
 		return l_key;
 	if(!IsAliasContact(ar_alias))
@@ -195,17 +194,22 @@ std::string CBlowIni::ResolveBlowKey(const std::string& a_network, const std::st
 
 	// An alias selects the source's key and mode. A second alias ends the lookup.
 	std::string l_sourceAlias;
-	l_key = FindBlowKey(a_network, ar_alias, ar_cbc, l_sourceAlias);
+	l_key = FindBlowKey(a_network, ar_alias, ar_cbc, l_sourceAlias, ar_keyUnreadable);
 	if(l_key.empty())
 		ar_cbc = false;
 	return l_key;
 }
 
 
-std::string CBlowIni::GetBlowKey(const std::string& a_network, const std::string& a_contact, bool& ar_cbc) const
+std::string CBlowIni::GetBlowKey(const std::string& a_network, const std::string& a_contact,
+	bool& ar_cbc, bool* ar_keyUnreadable) const
 {
 	std::string l_alias;
-	return ResolveBlowKey(a_network, a_contact, ar_cbc, l_alias);
+	bool l_keyUnreadable = false;
+	std::string l_key = ResolveBlowKey(a_network, a_contact, ar_cbc, l_alias, l_keyUnreadable);
+	if(ar_keyUnreadable)
+		*ar_keyUnreadable = l_key.empty() && l_keyUnreadable;
+	return l_key;
 }
 
 
@@ -217,7 +221,8 @@ CBlowIni::AliasWriteResult CBlowIni::WriteBlowAlias(const std::string& a_network
 
 	bool l_cbc;
 	std::string l_alias;
-	if(ResolveBlowKey(a_network, a_source, l_cbc, l_alias).empty())
+	bool l_keyUnreadable = false;
+	if(ResolveBlowKey(a_network, a_source, l_cbc, l_alias, l_keyUnreadable).empty())
 		return AliasWriteResult::NoKey;
 
 	// Flatten an existing alias so successive nickname changes stay one hop away.
@@ -308,7 +313,8 @@ bool CBlowIni::WriteBlowKey(const std::string& a_name, const std::string& a_valu
 		return false;
 	}
 
-	blowfish_encrypt(l_keyActual, l_keyValue, m_iniBlowKey);
+	if(!blowfish_encrypt(l_keyActual, l_keyValue, m_iniBlowKey))
+		return false;
 	l_keyValue.insert(0, "+OK ");
 
 	bool l_success = true;
