@@ -24,5 +24,5 @@ The `Release` folder contains `fish_10.dll`, `fish_inject.dll`, `libcrypto-3.dll
 place of `Release` to build into a folder named for that configuration. The
 solution builds `fish_10` and `fish_inject` by default.
 
-After installation, use `/fishdebug` to check SSL and test key storage.
+After installation, use `/fishdebug` to check SSL and the DLL paths.
 [mIRC compatibility instructions](README.md#openssl-compatibility-with-mirc-783-and-785)
