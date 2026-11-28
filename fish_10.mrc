@@ -1,4 +1,4 @@
-; FiSH 10 mIRC control script. The DLLs handle IRC encryption and decryption.
+; ReefCrypt mIRC control script. The DLLs handle IRC encryption and decryption.
 ; The script manages keys, preferences, DH1080 notices and local display.
 
 on *:START:fish10.start
@@ -10,7 +10,7 @@ alias -l fish10.start {
   set %FiSH_dll $qt(%exe.dir $+ fish_10.dll)
   set %blow_ini $iif($portable,%exe.dir,$mircdir) $+ blow.ini
   if (!$isfile(%engine)) || (!$isfile($noqt(%FiSH_dll))) {
-    echo -s FiSH 10 could not find its DLLs next to mIRC.
+    echo -s ReefCrypt could not find its DLLs next to mIRC.
     return
   }
   .dll $qt(%engine) _callMe
@@ -43,7 +43,7 @@ alias -l fish10.network {
 
 alias -l fish10.ready {
   if ($hget(reefcrypt.fish.runtime,initialized)) && ($fish10.network != $null) return $true
-  echo -a FiSH 10 requires its DLLs and an IRC network name for this operation.
+  echo -a ReefCrypt requires its DLLs and an IRC network name for this operation.
   return $false
 }
 
@@ -84,16 +84,16 @@ alias -l fish10.store.manual {
   if (!$fish10.target.valid($2)) || ($3 == $null) return
   if (!$fish10.ready) return
   if ($dll(%FiSH_dll,FiSH_WriteKey10,$1 $fish10.network $2 $3-) == ok) {
-    echo -a FiSH 10 saved the key for $2 $+ .
+    echo -a ReefCrypt saved the key for $2 $+ .
   }
-  else echo -a FiSH 10 could not save the key for $2 $+ .
+  else echo -a ReefCrypt could not save the key for $2 $+ .
 }
 
 alias FiSH.showkey {
   var %target = $fish10.context($1)
   if (!$fish10.target.valid(%target)) || (!$fish10.ready) return
   if (!$fish10.contact.key(%target)) {
-    echo -a FiSH 10 has no key for %target $+ .
+    echo -a ReefCrypt has no key for %target $+ .
     return
   }
   var %key = $dll(%FiSH_dll,FiSH_GetKey10,$fish10.network %target)
@@ -110,9 +110,9 @@ alias FiSH.removekey {
   .dll %FiSH_dll FiSH_DelKey10 $fish10.network %target
   if (!$fish10.contact.key(%target)) {
     if ($window(@FiSH-Key)) window -c @FiSH-Key
-    echo -a FiSH 10 has no key for %target $+ .
+    echo -a ReefCrypt has no key for %target $+ .
   }
-  else echo -a FiSH 10 could not remove the key for %target $+ .
+  else echo -a ReefCrypt could not remove the key for %target $+ .
 }
 
 alias FiSH.usechankey {
@@ -124,9 +124,9 @@ alias FiSH.usechankey {
   }
   if (!$fish10.ready) return
   var %result = $dll(%FiSH_dll,FiSH_WriteAlias10,$fish10.network %target %source)
-  if (%result == ok) echo -a FiSH 10 linked the key for %target to %source $+ .
-  elseif (%result == no_key) echo -a FiSH 10 could not find a key for %source $+ .
-  else echo -a FiSH 10 could not link %target to %source $+ .
+  if (%result == ok) echo -a ReefCrypt linked the key for %target to %source $+ .
+  elseif (%result == no_key) echo -a ReefCrypt could not find a key for %source $+ .
+  else echo -a ReefCrypt could not link %target to %source $+ .
 }
 
 alias -l fish10.plain.prefix {
@@ -138,7 +138,7 @@ alias -l fish10.plain.prefix {
 alias FiSH.prefix {
   if (!$hget(reefcrypt.fish.runtime,initialized)) return
   if ($1 == $null) {
-    echo -a FiSH 10 plaintext prefix is $qt($fish10.plain.prefix) $+ .
+    echo -a ReefCrypt plaintext prefix is $qt($fish10.plain.prefix) $+ .
     return
   }
   ; Quote the value so Windows' INI API preserves the trailing separator.
@@ -148,8 +148,8 @@ alias FiSH.prefix {
 alias FiSH.showmyip {
   if (!$hget(reefcrypt.fish.runtime,initialized)) return
   var %public.ip = $dll(%FiSH_dll,FiSH_GetMyIP,$null)
-  if (%public.ip != $null) echo -a FiSH 10 public IP $+ $chr(58) %public.ip
-  else echo -a FiSH 10 could not look up the public IP. Check MyIP_service in blow.ini.
+  if (%public.ip != $null) echo -a ReefCrypt public IP $+ $chr(58) %public.ip
+  else echo -a ReefCrypt could not look up the public IP. Check MyIP_service in blow.ini.
 }
 
 alias -l fish10.enabled {
@@ -193,19 +193,19 @@ alias FiSH.DH1080_INIT {
   if (!$fish10.ready) return
   var %item = $fish10.pending.item(%peer)
   if ($hget(reefcrypt.fish.pending,%item)) {
-    echo -a FiSH 10 already has an exchange pending with %peer $+ .
+    echo -a ReefCrypt already has an exchange pending with %peer $+ .
     return
   }
   var %pair = $dll(%FiSH_dll,DH1080_gen,$null)
   if (!$fish10.dh.public.valid($gettok(%pair,2,32))) {
-    echo -a FiSH 10 could not generate a DH1080 key pair.
+    echo -a ReefCrypt could not generate a DH1080 key pair.
     return
   }
   var %cbc = $fish10.cbc.offer(%peer)
   ; Pending private keys live for 120 seconds in memory and are never written to disk.
   hadd -mu120 reefcrypt.fish.pending %item $gettok(%pair,1,32) %cbc
   .notice %peer DH1080_INIT $gettok(%pair,2,32) $iif(%cbc == 1,CBC)
-  echo -a FiSH 10 started a key exchange with %peer $+ .
+  echo -a ReefCrypt started a key exchange with %peer $+ .
 }
 
 on ^*:NOTICE:DH1080_*:?:{
@@ -238,7 +238,7 @@ alias -l fish10.dh.receive {
   if ($dll(%FiSH_dll,FiSH_WriteKey10,raw_bytes $fish10.network $1 %key) != ok) return
   if (%pending != $null) hdel reefcrypt.fish.pending %item
   if ($2 === DH1080_INIT) .notice $1 DH1080_FINISH %public $iif($4 == 1,CBC)
-  echo -a FiSH 10 established an $iif($4 == 1,CBC,ECB) key with $1 $+ .
+  echo -a ReefCrypt established an $iif($4 == 1,CBC,ECB) key with $1 $+ .
 }
 
 on *:OPEN:?:*:{
@@ -291,8 +291,8 @@ alias -l fish10.marker {
 }
 
 alias -l fish10.debug.line {
-  echo -s FiSH 10 $1-
-  if ($1- != $null) aline @FiSH-Debug FiSH 10 $1-
+  echo -s ReefCrypt $1-
+  if ($1- != $null) aline @FiSH-Debug ReefCrypt $1-
 }
 
 alias fishdebug {
@@ -332,18 +332,18 @@ alias -l fish10.menu.target {
 
 alias -l fish10.menu.setkey {
   if (!$fish10.target.valid($1)) return
-  var %key = $input(Enter a key. Use cbc: at the beginning for CBC.,ep,$active,FiSH 10)
+  var %key = $input(Enter a key. Use cbc: at the beginning for CBC.,ep,$active,ReefCrypt)
   if (%key != $null) FiSH.setkey_utf8 $1 %key
 }
 
 alias -l fish10.menu.alias {
   if (!$fish10.target.valid($1)) return
-  var %source = $input(Use the key from which channel or nick?,e,$active,FiSH 10)
+  var %source = $input(Use the key from which channel or nick?,e,$active,ReefCrypt)
   if (%source != $null) FiSH.usechankey $1 %source
 }
 
 alias -l fish10.menu.prefix {
-  var %prefix = $input(Enter the plaintext prefix.,e,$active,FiSH 10,$regsubex($fish10.plain.prefix,/\x20+$/,$null))
+  var %prefix = $input(Enter the plaintext prefix.,e,$active,ReefCrypt,$regsubex($fish10.plain.prefix,/\x20+$/,$null))
   if (%prefix != $null) FiSH.prefix %prefix
 }
 
@@ -352,7 +352,7 @@ alias -l fish10.menu.prefix.off {
 }
 
 alias -l fish10.menu.marker {
-  var %mark = $input(Enter a marker for encrypted messages.,e,$active,FiSH 10,$noqt($readini(%blow_ini,n,FiSH,mark_encrypted)))
+  var %mark = $input(Enter a marker for encrypted messages.,e,$active,ReefCrypt,$noqt($readini(%blow_ini,n,FiSH,mark_encrypted)))
   if (%mark != $null) writeini -n $qt(%blow_ini) FiSH mark_encrypted $qt(%mark)
 }
 
@@ -369,7 +369,7 @@ alias -l fish10.contact.toggle {
 }
 
 menu status,channel,query,nicklist {
-  FiSH 10
+  ReefCrypt
   .$iif($fish10.menu.target($1),Set a key):fish10.menu.setkey $fish10.menu.target($1)
   .$iif($fish10.menu.target($1),Show the key):FiSH.showkey $fish10.menu.target($1)
   .$iif($fish10.menu.target($1),Remove the key):FiSH.removekey $fish10.menu.target($1)
