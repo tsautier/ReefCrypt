@@ -11,9 +11,9 @@ Before leaving the GitHub fork network, export a full Git mirror (including tags
 | master | `9b7b98e6370f4f4c6c07901fb5e70383918da18e` |
 | fix/fish-10-issues | `a707568ad5057b829eb16ac9cfd1e4ec1751ca2a` |
 | feat/fish-aead-v1 | `2f084d8d04fafe1fd84108404505bf0d32e20efa` |
-| codex/reefcrypt-mirc-script | `3a1ac4c9f349782fe2dc73c7a3a55ac1d7b7cc35` |
-| codex/reefcrypt-dirtirc | `e16ed067dadddd1d962a4f45ea7d6c452b95cd22` |
-| codex/reefcrypt-name-final | `cb3251ec9bd0d1902e00f19c23365fe03ad88429` |
+| refactor/mirc-script | `3a1ac4c9f349782fe2dc73c7a3a55ac1d7b7cc35` |
+| refactor/openssl-ecb | `e16ed067dadddd1d962a4f45ea7d6c452b95cd22` |
+| refactor/branding | `cb3251ec9bd0d1902e00f19c23365fe03ad88429` |
 | vscode-files | `8884e3f6d6609c0a6c003715370d3ecbd0c9f7cb` |
 
 Open PRs [#1](https://github.com/tsautier/ReefCrypt/pull/1) (opt-in AEAD), [#2](https://github.com/tsautier/ReefCrypt/pull/2) (script rewrite), and [#3](https://github.com/tsautier/ReefCrypt/pull/3) (ECB replacement) all target `fix/fish-10-issues`. Preserve their review history and do not merge without checking conflicts and integrated tests. Their reported tests have not been independently reproduced for this inventory.
@@ -28,6 +28,6 @@ The historical README identifies FiSH v1.30, RXD, flakes, DirtIRC, iNFekt and Mi
 2. Review and integrate script and ECB replacements and the AEAD branch, resolving overlap explicitly. Review the branding branch separately.
 3. Reproduce native build and interoperability tests. Test encryption failures, malformed messages, replay, nonce uniqueness, downgrade resistance, key storage, authenticated key exchange and IRC line limits. Legacy ECB/CBC and DH1080 must be identified as compatibility modes, not modern authenticated encryption.
 4. Review dependencies, memory safety, hook behavior, build reproducibility, release packaging and license notices. Publish only after the release and licensing gates pass.
-5. Once preservation is verified, use GitHub's documented Leave fork network workflow if appropriate. Do not delete the original repository or overwrite history. Retain a link to upstream and contributor attribution.
+5. The GitHub fork network was left on 2026-11-28. Retain a link to upstream and contributor attribution. Verify preservation before further history changes.
 
 References: [upstream](https://github.com/flakes/mirc_fish_10), [GitHub detaching a fork](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/detaching-a-fork), [RFC 8439](https://www.rfc-editor.org/rfc/rfc8439).
