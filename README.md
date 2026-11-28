@@ -101,8 +101,10 @@ files from the same FireDaemon OpenSSL 3.5 LTS ZIP to the folder containing
 | `x86/lib/ossl-modules/legacy.dll` | `libcrypto-legacy.dll` |
 
 Set `load=1` in the `[ssl]` section of `mirc.ini`, restart mIRC, and run
-`/fishdebug`. Check that `SSL ready` is `$true`, `SSL mode` is `1`, and
-`GetKey10` returns `HelloWorld`. This setup was reported to work with
+`/fishdebug`. Check that `SSL ready` is `$true` and `SSL mode` is `1`.
+To check key storage, run `/FiSH.setkey #fish-test test-key` on a connected
+network, verify it with `/FiSH.showkey #fish-test`, then remove it with
+`/FiSH.removekey #fish-test`. This setup was reported to work with
 mIRC 7.83 using OpenSSL 3.6.0 and with mIRC 7.85 using OpenSSL 3.5.9.
 [mIRC 7.83 report](https://github.com/flakes/mirc_fish_10/issues/80#issuecomment-3651525338),
 [mIRC 7.85 report](https://github.com/flakes/mirc_fish_10/issues/80#issuecomment-6372411019)
@@ -134,13 +136,13 @@ not if they do.
 
 ## ABOUT
 
-fish_10.mrc is mostly a 1:1 copy of FiSH.mrc, with quite a number of modifications to
-enable proper Windows Vista and 7 support, to facilitate DLL loading, for CBC mode and
-multi-network awareness.
+ReefCrypt's `fish_10.mrc` is a new implementation of the mIRC integration, based on
+the observable behavior and the public DLL interface of FiSH 10. It retains the
+script filename, the `/FiSH.*` and `/keyx` commands, the existing `blow.ini` profiles,
+and DH1080 key exchange with ECB and optional CBC negotiation.
 
-I would like to thank RXD for the work he has put into the FiSH addon over the last
-few years. However, he has been slow with updates and unwilling to open source a
-simple mIRC addon like this, so someone had to take over!
+RXD wrote the original FiSH 1.30 add-on. The historical FiSH 10 script adapted RXD's
+`FiSH.mrc` with changes by flakes. The repository history records that earlier work.
 
 FiSH 10 uses [MinHook](https://github.com/TsudaKageyu/minhook) by TsudaKageyu and
 utility methods from [iNFekt](http://code.google.com/p/infekt/). Earlier releases
